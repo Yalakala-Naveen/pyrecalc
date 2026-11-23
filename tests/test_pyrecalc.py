@@ -1,0 +1,134 @@
+"""Tests for pyrecalc. Fixtures are generated workbooks built with openpyxl,
+including planted cached-value mismatches (written by hand-editing the
+cached sheet the way a stale Excel save would leave them)."""
+
+import os
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+import openpyxl  # noqa: E402
+
+from pyrecalc import Workbook  # noqa: E402
+from pyrecalc.__main__ import main  # noqa: E402
+from pyrecalc.errors import ExcelError  # noqa: E402
+
+
+def build(cells, sheet="Sheet", extra_sheets=None):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = sheet
+    for ref, val in cells.items():
+        ws[ref] = val
+    for name, scells in (extra_sheets or {}).items():
+        ws2 = wb.create_sheet(name)
+        for ref, val in scells.items():
+            ws2[ref] = val
+    fd, path = tempfile.mkstemp(suffix=".xlsx")
+    os.close(fd)
+    wb.save(path)
+    return path
+
+
+class EvaluatorTests(unittest.TestCase):
+    def val(self, formula, cells=None, sheet="Sheet"):
+        all_cells = dict(cells or {})
+        all_cells["Z9"] = formula
+        path = build(all_cells, sheet=sheet)
+        self.addCleanup(os.unlink, path)
+        return Workbook(path).value("Z9")
+
+    def test_arithmetic_precedence(self):
+        self.assertEqual(self.val("=1+2*3"), 7.0)
+        self.assertEqual(self.val("=(1+2)*3"), 9.0)
+        self.assertEqual(self.val("=2^3"), 8.0)
+        self.assertEqual(self.val("=50%"), 0.5)
+        self.assertEqual(self.val("=-3+1"), -2.0)
+
+    def test_cell_refs_and_ranges(self):
+        cells = {"A1": 10, "A2": 20, "A3": 30}
+        self.assertEqual(self.val("=SUM(A1:A3)", cells), 60.0)
+        self.assertEqual(self.val("=AVERAGE(A1:A3)", cells), 20.0)
+        self.assertEqual(self.val("=$A$1+A2", cells), 30.0)
+        self.assertEqual(self.val("=COUNT(A1:A3)", cells), 3.0)
+        self.assertEqual(self.val("=MIN(A1:A3)+MAX(A1:A3)", cells), 40.0)
+
+    def test_if_and_logic(self):
+        cells = {"A1": 5}
+        self.assertEqual(self.val('=IF(A1>3,"big","small")', cells), "big")
+        self.assertEqual(self.val('=IF(A1>30,"big","small")', cells), "small")
+        self.assertEqual(self.val("=AND(A1>1,A1<10)", cells), True)
+        self.assertEqual(self.val("=NOT(A1>10)", cells), True)
+
+    def test_text_functions(self):
+        self.assertEqual(self.val('="a"&"b"'), "ab")
+        self.assertEqual(self.val('=CONCAT("x","y")'), "xy")
+        self.assertEqual(self.val('=LEN("hello")'), 5.0)
+        self.assertEqual(self.val('=UPPER("ab")'), "AB")
+
+    def test_math_functions(self):
+        self.assertEqual(self.val("=ROUND(2.5,0)"), 3.0)
+        self.assertEqual(self.val("=ROUND(2.567,2)"), 2.57)
+        self.assertEqual(self.val("=ABS(-4)"), 4.0)
+        self.assertEqual(self.val("=SQRT(9)"), 3.0)
+        self.assertEqual(self.val("=POWER(2,10)"), 1024.0)
+
+    def test_errors_are_values(self):
+        self.assertEqual(self.val("=1/0"), ExcelError("#DIV/0!"))
+        self.assertEqual(self.val("=NOSUCHFN(1)"), ExcelError("#NAME?"))
+        self.assertEqual(self.val('=IFERROR(1/0,"fallback")'), "fallback")
+        # error propagates through a dependent formula
+        path = build({"A1": "=1/0", "A2": "=A1+1"})
+        self.addCleanup(os.unlink, path)
+        self.assertEqual(Workbook(path).value("A2"), ExcelError("#DIV/0!"))
+
+    def test_comparisons(self):
+        self.assertEqual(self.val("=1<2"), True)
+        self.assertEqual(self.val("=2<>2"), False)
+        self.assertEqual(self.val('="a"="A"'), True)  # Excel compares case-insensitively
+
+    def test_cross_sheet_ref(self):
+        path = build({"A1": "=Inputs!B3*2"}, extra_sheets={"Inputs": {"B3": 21}})
+        self.addCleanup(os.unlink, path)
+        wb = Workbook(path)
+        self.assertEqual(wb.value("A1"), 42.0)
+        wb.set("Inputs!B3", 0.12)
+        self.assertEqual(wb.value("A1"), 0.24)
+
+    def test_circular_reference_detected(self):
+        path = build({"A1": "=A2+1", "A2": "=A1+1"})
+        self.addCleanup(os.unlink, path)
+        self.assertEqual(Workbook(path).value("A1"), ExcelError("#CIRC!"))
+
+
+class VerifyTests(unittest.TestCase):
+    def test_verify_clean_and_mismatch(self):
+        # openpyxl writes no cached values, so verify() has nothing to
+        # contradict: checked counts, no mismatches.
+        path = build({"A1": 2, "A2": "=A1*3"})
+        self.addCleanup(os.unlink, path)
+        report = Workbook(path).verify()
+        self.assertEqual(report.checked, 1)
+        self.assertTrue(report.ok)
+
+        # a stale cached value (what an out-of-date Excel save leaves
+        # behind) that disagrees with the formula must be a mismatch.
+        wb = Workbook(path)
+        wb._cached[("Sheet", "A2")] = 999
+        report = wb.verify()
+        self.assertFalse(report.ok)
+        self.assertEqual(len(report.mismatches), 1)
+        self.assertEqual(report.mismatches[0].computed, 6.0)
+
+    def test_cli_value_and_check(self):
+        path = build({"A1": 3, "A2": "=A1*A1"})
+        self.addCleanup(os.unlink, path)
+        self.assertEqual(main(["value", path, "A2"]), 0)
+        self.assertEqual(main(["check", path]), 0)
+        self.assertEqual(main(["bogus", path]), 2)
+
+
+if __name__ == "__main__":
+    unittest.main()
