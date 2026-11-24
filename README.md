@@ -32,8 +32,12 @@ pyrecalc value model.xlsx "Outputs!C2"
 - Arithmetic, comparison and concatenation operators, percent, unary minus
 - Cell refs (relative and `$`-absolute), sheet-qualified refs
   (`Inputs!B3`, `'My Sheet'!B3`), ranges (`A1:B5`)
-- SUM, AVERAGE, MIN, MAX, COUNT, COUNTA, IF, IFERROR, ROUND, ABS, SQRT,
-  POWER, AND, OR, NOT, CONCAT, CONCATENATE, LEN, UPPER, LOWER
+- SUM, AVERAGE, MIN, MAX, COUNT, COUNTA, IF, IFERROR, ROUND, ROUNDUP,
+  ROUNDDOWN, INT, MOD, ABS, SQRT, POWER, AND, OR, NOT, CONCAT,
+  CONCATENATE, LEN, UPPER, LOWER, LEFT, RIGHT, MID, TRIM, PROPER
+- Criteria aggregation: SUMIF, COUNTIF, AVERAGEIF (Excel criteria
+  semantics — operator prefixes like `">=20"` and `"<>apple"`, text
+  compared case-insensitively) and SUMPRODUCT
 - Excel error values as values — `#DIV/0!`, `#VALUE!`, `#REF!`,
   `#NAME?`, `#N/A` propagate through dependents exactly like Excel;
   circular references are detected and reported (`#CIRC!`), never a hang
@@ -57,7 +61,7 @@ generated workbooks. The wedge pyrecalc serves first is that check:
 ## Development
 
 ```bash
-python -m unittest discover -s tests   # 11 tests, generated-workbook fixtures
+python -m unittest discover -s tests   # 14 tests, generated-workbook fixtures
 ```
 
 MIT © Naveen Yalakala

@@ -83,6 +83,35 @@ def _to_text(v: object) -> object:
     return str(v)
 
 
+def _criteria_match(value: object, criteria: object) -> bool:
+    """Excel criteria semantics: an optional comparison operator prefix
+    (``>=10``, ``<>x``, ``=foo``) or a plain value compared for equality
+    (numbers numerically, text case-insensitively)."""
+    if isinstance(criteria, ExcelError):
+        return False
+    op, target = "=", criteria
+    if isinstance(criteria, str):
+        for prefix in ("<>", "<=", ">=", "<", ">", "="):
+            if criteria.startswith(prefix):
+                op, target = prefix, criteria[len(prefix):]
+                break
+        if isinstance(target, str):
+            try:
+                target = float(target)
+            except ValueError:
+                pass
+    if _is_num(value) and _is_num(target):
+        a, b = float(value), float(target)  # type: ignore[arg-type]
+        return {"=": a == b, "<>": a != b, "<": a < b,
+                "<=": a <= b, ">": a > b, ">=": a >= b}[op]
+    if op in ("=", "<>"):
+        eq = (value is None and target in ("", None)) or (
+            isinstance(value, str) and isinstance(target, str)
+            and value.casefold() == target.casefold()) or value == target
+        return eq if op == "=" else not eq
+    return False
+
+
 def _flatten(args: list) -> list:
     out: list = []
     for a in args:
@@ -197,6 +226,49 @@ class Evaluator:
                 return VALUE
             v = self.eval(arg_nodes[0])
             return self.eval(arg_nodes[1]) if isinstance(v, ExcelError) else v
+        if name in ("SUMIF", "COUNTIF", "AVERAGEIF"):
+            # Criteria functions keep their ranges separate — the generic
+            # path below flattens every argument together and would lose
+            # which values the criteria applies to.
+            if len(arg_nodes) not in (2, 3):
+                return VALUE
+            crit_range = self.eval(arg_nodes[0])
+            criteria = self.eval(arg_nodes[1])
+            if isinstance(criteria, ExcelError):
+                return criteria
+            crit_vals = crit_range if isinstance(crit_range, list) else [crit_range]
+            for v in crit_vals:
+                if isinstance(v, ExcelError):
+                    return v
+            if name == "COUNTIF":
+                if len(arg_nodes) != 2:
+                    return VALUE
+                return float(sum(1 for v in crit_vals
+                                 if _criteria_match(v, criteria)))
+            sum_range = self.eval(arg_nodes[2]) if len(arg_nodes) == 3 else crit_range
+            if isinstance(sum_range, ExcelError):
+                return sum_range
+            sum_vals = sum_range if isinstance(sum_range, list) else [sum_range]
+            for v in sum_vals:
+                if isinstance(v, ExcelError):
+                    return v
+            matched = [float(sv) for cv, sv in zip(crit_vals, sum_vals)
+                       if _criteria_match(cv, criteria) and _is_num(sv)]
+            if name == "SUMIF":
+                return sum(matched)
+            return sum(matched) / len(matched) if matched else DIV0
+        if name == "SUMPRODUCT":
+            arrays = []
+            for a in arg_nodes:
+                v = self.eval(a)
+                vals = v if isinstance(v, list) else [v]
+                for item in vals:
+                    if isinstance(item, ExcelError):
+                        return item
+                arrays.append([float(x) if _is_num(x) else 0.0 for x in vals])
+            if not arrays or len({len(a) for a in arrays}) != 1:
+                return VALUE
+            return sum(math.prod(col) for col in zip(*arrays))
         if name in ("AND", "OR", "NOT"):
             vals = [self.eval(a) for a in arg_nodes]
             for v in _flatten(vals):
@@ -237,6 +309,22 @@ class Evaluator:
             places = int(args[1])  # type: ignore[arg-type]
             factor = 10.0 ** places
             return math.floor(abs(float(args[0])) * factor + 0.5) / factor * (1 if float(args[0]) >= 0 else -1)  # type: ignore[arg-type]
+        if name in ("ROUNDUP", "ROUNDDOWN"):
+            if len(args) != 2 or not _is_num(args[0]) or not _is_num(args[1]):
+                return VALUE
+            places = int(args[1])  # type: ignore[arg-type]
+            factor = 10.0 ** places
+            scaled = abs(float(args[0])) * factor  # type: ignore[arg-type]
+            done = math.ceil(scaled) if name == "ROUNDUP" else math.floor(scaled)
+            return done / factor * (1 if float(args[0]) >= 0 else -1)  # type: ignore[arg-type]
+        if name == "INT":
+            return float(math.floor(float(args[0]))) if len(args) == 1 and _is_num(args[0]) else VALUE  # type: ignore[arg-type]
+        if name == "MOD":
+            if len(args) == 2 and _is_num(args[0]) and _is_num(args[1]):
+                if float(args[1]) == 0:  # type: ignore[arg-type]
+                    return DIV0
+                return float(args[0]) % float(args[1])  # type: ignore[operator]
+            return VALUE
         if name == "ABS":
             return abs(float(args[0])) if len(args) == 1 and _is_num(args[0]) else VALUE
         if name == "SQRT":
@@ -263,6 +351,37 @@ class Evaluator:
             if isinstance(t, ExcelError):
                 return t
             return str(t).upper() if name == "UPPER" else str(t).lower()
+        if name in ("LEFT", "RIGHT"):
+            if len(args) not in (1, 2):
+                return VALUE
+            t = _to_text(args[0])
+            if isinstance(t, ExcelError):
+                return t
+            n = int(args[1]) if len(args) == 2 and _is_num(args[1]) else 1
+            if n < 0:
+                return VALUE
+            s = str(t)
+            return s[:n] if name == "LEFT" else (s[-n:] if n else "")
+        if name == "MID":
+            if len(args) != 3 or not _is_num(args[1]) or not _is_num(args[2]):
+                return VALUE
+            t = _to_text(args[0])
+            if isinstance(t, ExcelError):
+                return t
+            start, count = int(args[1]), int(args[2])  # type: ignore[arg-type]
+            if start < 1 or count < 0:
+                return VALUE
+            return str(t)[start - 1:start - 1 + count]
+        if name == "TRIM":
+            t = _to_text(args[0]) if len(args) == 1 else VALUE
+            if isinstance(t, ExcelError):
+                return t
+            return " ".join(str(t).split())
+        if name == "PROPER":
+            t = _to_text(args[0]) if len(args) == 1 else VALUE
+            if isinstance(t, ExcelError):
+                return t
+            return str(t).title()
         if name == "NA":
             return NA
         return NAME

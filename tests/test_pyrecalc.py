@@ -75,6 +75,36 @@ class EvaluatorTests(unittest.TestCase):
         self.assertEqual(self.val("=SQRT(9)"), 3.0)
         self.assertEqual(self.val("=POWER(2,10)"), 1024.0)
 
+    def test_criteria_functions(self):
+        cells = {"A1": 10, "A2": 20, "A3": 30, "B1": 1, "B2": 2, "B3": 3}
+        self.assertEqual(self.val("=SUMIF(A1:A3,\">15\")", cells), 50.0)
+        self.assertEqual(self.val("=SUMIF(A1:A3,\">15\",B1:B3)", cells), 5.0)
+        self.assertEqual(self.val("=COUNTIF(A1:A3,\">=20\")", cells), 2.0)
+        self.assertEqual(self.val("=AVERAGEIF(A1:A3,\"<25\")", cells), 15.0)
+        self.assertEqual(self.val("=AVERAGEIF(A1:A3,\">100\")", cells),
+                         ExcelError("#DIV/0!"))
+        labels = {"A1": "Apple", "A2": "apple", "A3": "Pear", "B1": 4, "B2": 6, "B3": 9}
+        self.assertEqual(self.val('=SUMIF(A1:A3,"apple",B1:B3)', labels), 10.0)
+        self.assertEqual(self.val('=COUNTIF(A1:A3,"<>apple")', labels), 1.0)
+
+    def test_sumproduct_and_rounding_family(self):
+        cells = {"A1": 2, "A2": 3, "B1": 10, "B2": 20}
+        self.assertEqual(self.val("=SUMPRODUCT(A1:A2,B1:B2)", cells), 80.0)
+        self.assertEqual(self.val("=ROUNDUP(2.51,0)"), 3.0)
+        self.assertEqual(self.val("=ROUNDDOWN(2.99,0)"), 2.0)
+        self.assertEqual(self.val("=ROUNDUP(-2.51,0)"), -3.0)
+        self.assertEqual(self.val("=INT(-1.5)"), -2.0)
+        self.assertEqual(self.val("=MOD(7,3)"), 1.0)
+        self.assertEqual(self.val("=MOD(7,0)"), ExcelError("#DIV/0!"))
+
+    def test_more_text_functions(self):
+        self.assertEqual(self.val('=LEFT("hello",2)'), "he")
+        self.assertEqual(self.val('=RIGHT("hello",2)'), "lo")
+        self.assertEqual(self.val('=MID("hello",2,3)'), "ell")
+        self.assertEqual(self.val('=TRIM("  a   b ")'), "a b")
+        self.assertEqual(self.val('=PROPER("jane doe")'), "Jane Doe")
+        self.assertEqual(self.val('=LOWER("AB")'), "ab")
+
     def test_errors_are_values(self):
         self.assertEqual(self.val("=1/0"), ExcelError("#DIV/0!"))
         self.assertEqual(self.val("=NOSUCHFN(1)"), ExcelError("#NAME?"))
