@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pyrecalc — playground</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 880px; padding: 0 1rem; color: #1a1a1a; }
+  h1 { font-size: 1.6rem; margin-bottom: .2rem; }
+  .sub { color: #555; margin-top: 0; }
+  table { border-collapse: collapse; margin: 1rem 0; }
+  th, td { border: 1px solid #ccc; padding: 0; min-width: 92px; }
+  th { background: #f2f2f2; padding: .3rem .5rem; font-weight: 600; }
+  td input { width: 100%; border: 0; padding: .4rem .5rem; font: inherit; box-sizing: border-box; background: transparent; }
+  td.result { padding: .4rem .5rem; background: #fafafa; color: #333; }
+  td.mismatch { background: #ffe3e3; }
+  .err { color: #b00020; font-weight: 600; }
+  button { padding: .45rem .9rem; font: inherit; cursor: pointer; }
+  #verdict { font-weight: 600; margin-top: .5rem; }
+  code { background: #f2f2f2; padding: .1rem .3rem; border-radius: 3px; }
+  footer { color: #666; font-size: .9rem; margin-top: 2rem; }
+</style>
+</head>
+<body>
+<h1>pyrecalc — playground</h1>
+<p class="sub">Excel formula evaluation without Excel, in your browser. Edit any cell — formulas start with <code>=</code> — and every result recomputes live. The evaluator on this page is a JavaScript port of the Python package, parity-verified against it (34/34 cases).</p>
+
+<table id="grid"></table>
+<p>
+  <button id="tamper">Break a stored value (simulate a bad generated workbook)</button>
+  <button id="reset">Reset example</button>
+</p>
+<p id="verdict"></p>
+
+<p>The <b>Stored</b> column is what a generated workbook claims its formula cells contain (the cached values Excel would have written). pyrecalc recomputes each formula and flags any cell whose stored value disagrees — the silent failure this tool exists to catch.</p>
+
+<footer>
+  Python package: <code>pip install pyrecalc</code> (from Mon Nov 30, 2026) ·
+  Source: <a href="https://github.com/Yalakala-Naveen/pyrecalc">github.com/Yalakala-Naveen/pyrecalc</a> ·
+  Built by Naveen Yalakala.
+</footer>
+
+<script src="pyrecalc.js"></script>
+<script>
+const COLS = ["A", "B", "C", "D"], ROWS = [1, 2, 3, 4, 5];
+const PRESET = {
+  A1: "Item", B1: "Qty", C1: "Price", D1: "Line total",
+  A2: "Widget", B2: 10, C2: 25, D2: "=B2*C2",
+  A3: "Gadget", B3: 4, C3: 99.5, D3: "=B3*C3",
+  A4: "Total", D4: "=SUM(D2:D3)",
+  A5: "Avg line", D5: "=AVERAGE(D2:D3)"
+};
+let cells = { ...PRESET };
+// "stored" = the cached values a workbook file would carry for formula cells
+let stored = { D2: 250, D3: 398, D4: 648, D5: 324 };
+
+const grid = document.getElementById("grid");
+function buildGrid() {
+  grid.innerHTML = "";
+  const head = document.createElement("tr");
+  head.innerHTML = "<th></th>" + COLS.map(c => `<th>${c}</th>`).join("") + "<th>Computed</th><th>Stored</th>";
+  grid.appendChild(head);
+  for (const r of ROWS) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<th>${r}</th>`;
+    for (const c of COLS) {
+      const td = document.createElement("td");
+      const input = document.createElement("input");
+      input.value = cells[c + r] ?? "";
+      input.dataset.ref = c + r;
+      input.addEventListener("input", () => { readInputs(); render(); });
+      td.appendChild(input);
+      tr.appendChild(td);
+    }
+    const comp = document.createElement("td"); comp.className = "result"; comp.id = "comp" + r;
+    const stor = document.createElement("td"); stor.className = "result"; stor.id = "stor" + r;
+    tr.appendChild(comp); tr.appendChild(stor);
+    grid.appendChild(tr);
+  }
+}
+function readInputs() {
+  document.querySelectorAll("#grid input").forEach(inp => {
+    const v = inp.value;
+    if (v === "") delete cells[inp.dataset.ref];
+    else if (!isNaN(Number(v)) && !v.startsWith("=")) cells[inp.dataset.ref] = Number(v);
+    else cells[inp.dataset.ref] = v;
+  });
+}
+function computeAll() {
+  const cache = {}, busy = new Set();
+  const resolve = (sheet, ref) => {
+    if (ref in cache) return cache[ref];
+    if (busy.has(ref)) return Pyrecalc.ERR("#CIRC!");
+    busy.add(ref);
+    const raw = cells[ref];
+    let v = null;
+    if (typeof raw === "string" && raw.startsWith("=")) v = Pyrecalc.evalFormula(raw.slice(1), resolve, resolveRange);
+    else if (raw !== undefined) v = raw;
+    busy.delete(ref);
+    cache[ref] = v;
+    return v;
+  };
+  const resolveRange = (sheet, a, b) => Pyrecalc.iterRange(a, b).map(r => resolve(sheet, r));
+  const out = {};
+  for (const r of ROWS) for (const c of COLS) out[c + r] = resolve(null, c + r);
+  return out;
+}
+const fmt = v => v === null || v === undefined ? "" : Pyrecalc.isErr(v) ? `<span class="err">${v.__excelError}</span>` : String(Math.round(v * 1e10) / 1e10 === v ? v : v);
+function render() {
+  const vals = computeAll();
+  let mismatches = 0, checked = 0;
+  for (const r of ROWS) {
+    // show D-column formula results in the Computed/Stored columns for rows with a D formula
+    const ref = "D" + r, raw = cells[ref];
+    const comp = document.getElementById("comp" + r), stor = document.getElementById("stor" + r);
+    if (typeof raw === "string" && raw.startsWith("=")) {
+      checked++;
+      comp.innerHTML = fmt(vals[ref]);
+      stor.textContent = ref in stored ? String(stored[ref]) : "—";
+      const bad = ref in stored && !Pyrecalc.isErr(vals[ref]) && Number(vals[ref]) !== Number(stored[ref]);
+      if (bad) mismatches++;
+      comp.classList.toggle("mismatch", bad); stor.classList.toggle("mismatch", bad);
+    } else { comp.textContent = ""; stor.textContent = ""; comp.classList.remove("mismatch"); stor.classList.remove("mismatch"); }
+  }
+  const verdict = document.getElementById("verdict");
+  verdict.textContent = checked === 0 ? "" :
+    mismatches === 0 ? `✓ Verified: ${checked} formula cells checked, 0 mismatches.` :
+    `✗ ${mismatches} mismatch${mismatches > 1 ? "es" : ""} in ${checked} formula cells — the stored values do not match the formulas.`;
+  verdict.style.color = mismatches ? "#b00020" : "#137333";
+}
+document.getElementById("tamper").addEventListener("click", () => { stored.D4 = 600; render(); });
+document.getElementById("reset").addEventListener("click", () => { cells = { ...PRESET }; stored = { D2: 250, D3: 398, D4: 648, D5: 324 }; buildGrid(); render(); });
+buildGrid(); render();
+</script>
+</body>
+</html>

@@ -1,0 +1,138 @@
+[
+ {
+  "formula": "A1+B1*2",
+  "python": "18"
+ },
+ {
+  "formula": "SUM(A1:A3)",
+  "python": "60"
+ },
+ {
+  "formula": "AVERAGE(B1:B3)",
+  "python": "5"
+ },
+ {
+  "formula": "MAX(A1:B3)-MIN(A1:B3)",
+  "python": "26"
+ },
+ {
+  "formula": "IF(A1>B1,\"big\",\"small\")",
+  "python": "big"
+ },
+ {
+  "formula": "SUMIF(C1:C3,\"apple\",A1:A3)",
+  "python": "40"
+ },
+ {
+  "formula": "COUNTIF(C1:C3,\"apple\")",
+  "python": "2"
+ },
+ {
+  "formula": "AVERAGEIF(C1:C3,\"apple\",A1:A3)",
+  "python": "20"
+ },
+ {
+  "formula": "SUMPRODUCT(A1:A3,B1:B3)",
+  "python": "320"
+ },
+ {
+  "formula": "ROUND(D1,0)",
+  "python": "3"
+ },
+ {
+  "formula": "ROUNDUP(D1,0)",
+  "python": "3"
+ },
+ {
+  "formula": "ROUNDDOWN(2.9,0)",
+  "python": "2"
+ },
+ {
+  "formula": "INT(-1.5)",
+  "python": "-2"
+ },
+ {
+  "formula": "MOD(10,3)",
+  "python": "1"
+ },
+ {
+  "formula": "ABS(D2)",
+  "python": "3"
+ },
+ {
+  "formula": "SQRT(16)",
+  "python": "4"
+ },
+ {
+  "formula": "POWER(2,10)",
+  "python": "1024"
+ },
+ {
+  "formula": "LEFT(C1,3)",
+  "python": "app"
+ },
+ {
+  "formula": "RIGHT(C2,4)",
+  "python": "nana"
+ },
+ {
+  "formula": "MID(C1,2,3)",
+  "python": "ppl"
+ },
+ {
+  "formula": "LEN(C2)",
+  "python": "6"
+ },
+ {
+  "formula": "TRIM(\"  a  b  \")",
+  "python": "a b"
+ },
+ {
+  "formula": "PROPER(\"hello world\")",
+  "python": "Hello World"
+ },
+ {
+  "formula": "1/0",
+  "python": "#DIV/0!"
+ },
+ {
+  "formula": "IFERROR(1/0,\"caught\")",
+  "python": "caught"
+ },
+ {
+  "formula": "COUNT(A1:B3)",
+  "python": "6"
+ },
+ {
+  "formula": "COUNTA(C1:C3)",
+  "python": "3"
+ },
+ {
+  "formula": "A1&\" items\"",
+  "python": "10 items"
+ },
+ {
+  "formula": "\"Apple\"=C1",
+  "python": "TRUE"
+ },
+ {
+  "formula": "AND(A1>B1,B2>0)",
+  "python": "TRUE"
+ },
+ {
+  "formula": "NOT(FALSE)",
+  "python": "TRUE"
+ },
+ {
+  "formula": "50%",
+  "python": "0.5"
+ },
+ {
+  "formula": "SUM(A1:A3)/COUNT(A1:A3)",
+  "python": "20"
+ },
+ {
+  "formula": "NOSUCHFN(1)",
+  "python": "#NAME?"
+ }
+]
