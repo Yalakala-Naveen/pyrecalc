@@ -37,7 +37,11 @@ pyrecalc value model.xlsx "Outputs!C2"
   CONCATENATE, LEN, UPPER, LOWER, LEFT, RIGHT, MID, TRIM, PROPER
 - Criteria aggregation: SUMIF, COUNTIF, AVERAGEIF (Excel criteria
   semantics — operator prefixes like `">=20"` and `"<>apple"`, text
-  compared case-insensitively) and SUMPRODUCT
+  compared case-insensitively), SUMIFS, COUNTIFS, AVERAGEIFS and
+  SUMPRODUCT
+- Lookups: VLOOKUP (exact and approximate), INDEX and MATCH —
+  including the INDEX+MATCH combination generated workbooks use
+  instead of VLOOKUP
 - Excel error values as values — `#DIV/0!`, `#VALUE!`, `#REF!`,
   `#NAME?`, `#N/A` propagate through dependents exactly like Excel;
   circular references are detected and reported (`#CIRC!`), never a hang
@@ -46,8 +50,8 @@ pyrecalc value model.xlsx "Outputs!C2"
 
 Deterministic evaluation only — no model in the path. Out of scope for
 v1, stated plainly: array formulas, defined names, external-workbook
-references, DATABASE/CUBE/WEB functions, and lookup functions
-(VLOOKUP/XLOOKUP are a v1.1 candidate). Dates pass through as the
+references, DATABASE/CUBE/WEB functions, and XLOOKUP (VLOOKUP,
+INDEX and MATCH are in — see above). Dates pass through as the
 numbers Excel stores.
 
 ## Why
@@ -61,7 +65,7 @@ generated workbooks. The wedge pyrecalc serves first is that check:
 ## Development
 
 ```bash
-python -m unittest discover -s tests   # 14 tests, generated-workbook fixtures
+python -m unittest discover -s tests   # 17 tests, generated-workbook fixtures
 ```
 
 MIT © Naveen Yalakala

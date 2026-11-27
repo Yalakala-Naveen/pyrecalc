@@ -139,6 +139,19 @@
 
   function flatten(args) { const out = []; for (const a of args) { if (Array.isArray(a)) out.push(...a); else out.push(a); } return out; }
 
+  function rangeWidth(node) {
+    if (node[0] === "range") { const [c1] = splitRef(node[2]), [c2] = splitRef(node[3]); return Math.abs(c2 - c1) + 1; }
+    if (node[0] === "ref") return 1;
+    return null;
+  }
+  function lookupCmp(value, target) {
+    let a, b;
+    if (isNum(value) && isNum(target)) { a = value; b = target; }
+    else if (typeof value === "string" && typeof target === "string") { a = value.toLowerCase(); b = target.toLowerCase(); }
+    else return null;
+    return a > b ? 1 : a < b ? -1 : 0;
+  }
+
   function evaluate(node, resolve, resolveRange) {
     const kind = node[0];
     if (kind === "num" || kind === "str" || kind === "bool") return node[1];
@@ -198,6 +211,72 @@
       critVals.forEach((cv, idx) => { const sv = sumVals[idx]; if (criteriaMatch(cv, criteria) && isNum(sv)) matched.push(sv); });
       if (name === "SUMIF") return matched.reduce((s, x) => s + x, 0);
       return matched.length ? matched.reduce((s, x) => s + x, 0) / matched.length : DIV0;
+    }
+    if (["SUMIFS", "COUNTIFS", "AVERAGEIFS"].includes(name)) {
+      const lead = name === "COUNTIFS" ? 0 : 1;
+      if (argNodes.length < lead + 2 || (argNodes.length - lead) % 2) return VALUE;
+      const ranges = [], criteria = [];
+      for (let i = lead; i < argNodes.length; i += 2) {
+        const rv = ev(argNodes[i]); if (isErr(rv)) return rv;
+        ranges.push(Array.isArray(rv) ? rv : [rv]);
+        const cv = ev(argNodes[i + 1]); if (isErr(cv)) return cv;
+        criteria.push(cv);
+      }
+      if (new Set(ranges.map((r) => r.length)).size !== 1) return VALUE;
+      for (const r of ranges) for (const v of r) if (isErr(v)) return v;
+      const keep = [];
+      for (let i = 0; i < ranges[0].length; i++) if (ranges.every((r, k) => criteriaMatch(r[i], criteria[k]))) keep.push(i);
+      if (name === "COUNTIFS") return keep.length;
+      const vals = ev(argNodes[0]); if (isErr(vals)) return vals;
+      const sumVals = Array.isArray(vals) ? vals : [vals];
+      if (sumVals.length !== ranges[0].length) return VALUE;
+      const matched = keep.map((i) => sumVals[i]).filter(isNum);
+      if (name === "SUMIFS") return matched.reduce((s, x) => s + x, 0);
+      return matched.length ? matched.reduce((s, x) => s + x, 0) / matched.length : DIV0;
+    }
+    if (name === "VLOOKUP") {
+      if (![3, 4].includes(argNodes.length)) return VALUE;
+      const lookup = ev(argNodes[0]); if (isErr(lookup)) return lookup;
+      const table = ev(argNodes[1]); if (isErr(table)) return table;
+      const width = rangeWidth(argNodes[1]); if (width === null) return VALUE;
+      const cells = Array.isArray(table) ? table : [table];
+      const rows = []; for (let i = 0; i < cells.length; i += width) rows.push(cells.slice(i, i + width));
+      const col = ev(argNodes[2]); if (!isNum(col)) return VALUE;
+      const idx = Math.trunc(col);
+      if (idx < 1 || idx > width) return REF;
+      let exact = false;
+      if (argNodes.length === 4) { const flag = ev(argNodes[3]); if (isErr(flag)) return flag; exact = flag === false || (isNum(flag) && flag === 0); }
+      if (exact) { for (const row of rows) if (criteriaMatch(row[0], lookup)) return row[idx - 1]; return NA; }
+      let found = null;
+      for (const row of rows) { const cmp = lookupCmp(row[0], lookup); if (cmp !== null && cmp <= 0) found = row; }
+      return found !== null ? found[idx - 1] : NA;
+    }
+    if (name === "INDEX") {
+      if (![2, 3].includes(argNodes.length)) return VALUE;
+      const width = rangeWidth(argNodes[0]); if (width === null) return VALUE;
+      const arr = ev(argNodes[0]); if (isErr(arr)) return arr;
+      const cells = Array.isArray(arr) ? arr : [arr];
+      const rows = []; for (let i = 0; i < cells.length; i += width) rows.push(cells.slice(i, i + width));
+      const rn = ev(argNodes[1]); if (!isNum(rn)) return VALUE;
+      const r = Math.trunc(rn);
+      if (argNodes.length === 2 && (width === 1 || rows.length === 1)) return r >= 1 && r <= cells.length ? cells[r - 1] : REF;
+      if (r < 1 || r > rows.length) return REF;
+      if (argNodes.length === 2) return rows[r - 1];
+      const cn = ev(argNodes[2]); if (!isNum(cn)) return VALUE;
+      const c = Math.trunc(cn);
+      return c >= 1 && c <= width ? rows[r - 1][c - 1] : REF;
+    }
+    if (name === "MATCH") {
+      if (![2, 3].includes(argNodes.length)) return VALUE;
+      const lookup = ev(argNodes[0]); if (isErr(lookup)) return lookup;
+      const arr = ev(argNodes[1]); if (isErr(arr)) return arr;
+      const vals = Array.isArray(arr) ? arr : [arr];
+      let mtype = 1;
+      if (argNodes.length === 3) { const t = ev(argNodes[2]); if (isErr(t)) return t; if (!isNum(t)) return VALUE; mtype = t; }
+      if (mtype === 0) { for (let i = 0; i < vals.length; i++) if (criteriaMatch(vals[i], lookup)) return i + 1; return NA; }
+      let best = null;
+      for (let i = 0; i < vals.length; i++) { const cmp = lookupCmp(vals[i], lookup); if (cmp === null) continue; if (mtype > 0 && cmp <= 0) best = i; if (mtype < 0 && cmp >= 0) best = i; }
+      return best !== null ? best + 1 : NA;
     }
     if (name === "SUMPRODUCT") {
       const arrays = [];

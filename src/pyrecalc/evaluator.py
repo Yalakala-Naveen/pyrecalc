@@ -112,6 +112,29 @@ def _criteria_match(value: object, criteria: object) -> bool:
     return False
 
 
+def _range_width(node) -> int | None:
+    """Column count of a range/ref AST node, or None for anything else."""
+    if node[0] == "range":
+        c1, _ = split_ref(node[2])
+        c2, _ = split_ref(node[3])
+        return abs(c2 - c1) + 1
+    if node[0] == "ref":
+        return 1
+    return None
+
+
+def _lookup_cmp(value: object, target: object) -> int | None:
+    """-1/0/1 comparison for approximate lookups, or None if the pair is
+    not comparable (mixed types never match in an approximate scan)."""
+    if _is_num(value) and _is_num(target):
+        a, b = float(value), float(target)  # type: ignore[arg-type]
+    elif isinstance(value, str) and isinstance(target, str):
+        a, b = value.casefold(), target.casefold()
+    else:
+        return None
+    return (a > b) - (a < b)  # type: ignore[operator]
+
+
 def _flatten(args: list) -> list:
     out: list = []
     for a in args:
@@ -226,6 +249,143 @@ class Evaluator:
                 return VALUE
             v = self.eval(arg_nodes[0])
             return self.eval(arg_nodes[1]) if isinstance(v, ExcelError) else v
+        if name in ("SUMIFS", "COUNTIFS", "AVERAGEIFS"):
+            # Multi-criteria aggregation. SUMIFS/AVERAGEIFS take the
+            # value range FIRST, then (criteria_range, criteria) pairs;
+            # COUNTIFS is pairs only. Ranges stay separate, as in SUMIF.
+            lead = 0 if name == "COUNTIFS" else 1
+            if len(arg_nodes) < lead + 2 or (len(arg_nodes) - lead) % 2:
+                return VALUE
+            ranges: list[list] = []
+            criteria: list[object] = []
+            for i in range(lead, len(arg_nodes), 2):
+                rv = self.eval(arg_nodes[i])
+                if isinstance(rv, ExcelError):
+                    return rv
+                ranges.append(rv if isinstance(rv, list) else [rv])
+                cv = self.eval(arg_nodes[i + 1])
+                if isinstance(cv, ExcelError):
+                    return cv
+                criteria.append(cv)
+            if len({len(r) for r in ranges}) != 1:
+                return VALUE
+            for r in ranges:
+                for v in r:
+                    if isinstance(v, ExcelError):
+                        return v
+            keep = [i for i in range(len(ranges[0]))
+                    if all(_criteria_match(r[i], c)
+                           for r, c in zip(ranges, criteria))]
+            if name == "COUNTIFS":
+                return float(len(keep))
+            vals = self.eval(arg_nodes[0])
+            if isinstance(vals, ExcelError):
+                return vals
+            sum_vals = vals if isinstance(vals, list) else [vals]
+            if len(sum_vals) != len(ranges[0]):
+                return VALUE
+            matched = [float(sum_vals[i]) for i in keep
+                       if _is_num(sum_vals[i])]
+            if name == "SUMIFS":
+                return sum(matched)
+            return sum(matched) / len(matched) if matched else DIV0
+        if name == "VLOOKUP":
+            if len(arg_nodes) not in (3, 4):
+                return VALUE
+            lookup = self.eval(arg_nodes[0])
+            if isinstance(lookup, ExcelError):
+                return lookup
+            table = self.eval(arg_nodes[1])
+            if isinstance(table, ExcelError):
+                return table
+            width = _range_width(arg_nodes[1])
+            if width is None:
+                return VALUE
+            cells = table if isinstance(table, list) else [table]
+            rows = [cells[i:i + width] for i in range(0, len(cells), width)]
+            col = self.eval(arg_nodes[2])
+            if not _is_num(col):
+                return VALUE
+            idx = int(col)  # type: ignore[arg-type]
+            if idx < 1 or idx > width:
+                return REF
+            exact = False
+            if len(arg_nodes) == 4:
+                flag = self.eval(arg_nodes[3])
+                if isinstance(flag, ExcelError):
+                    return flag
+                exact = flag is False or (_is_num(flag) and float(flag) == 0.0)  # type: ignore[arg-type]
+            if exact:
+                for row in rows:
+                    if _criteria_match(row[0], lookup):
+                        return row[idx - 1]
+                return NA
+            found = None
+            for row in rows:
+                cmp = _lookup_cmp(row[0], lookup)
+                if cmp is not None and cmp <= 0:
+                    found = row
+            return found[idx - 1] if found is not None else NA
+        if name == "INDEX":
+            if len(arg_nodes) not in (2, 3):
+                return VALUE
+            width = _range_width(arg_nodes[0])
+            if width is None:
+                return VALUE
+            arr = self.eval(arg_nodes[0])
+            if isinstance(arr, ExcelError):
+                return arr
+            cells = arr if isinstance(arr, list) else [arr]
+            rows = [cells[i:i + width] for i in range(0, len(cells), width)]
+            rn = self.eval(arg_nodes[1])
+            if not _is_num(rn):
+                return VALUE
+            r = int(rn)  # type: ignore[arg-type]
+            if len(arg_nodes) == 2 and (width == 1 or len(rows) == 1):
+                flat = cells
+                return flat[r - 1] if 1 <= r <= len(flat) else REF
+            if r < 1 or r > len(rows):
+                return REF
+            if len(arg_nodes) == 2:
+                return rows[r - 1]
+            cn = self.eval(arg_nodes[2])
+            if not _is_num(cn):
+                return VALUE
+            c = int(cn)  # type: ignore[arg-type]
+            return rows[r - 1][c - 1] if 1 <= c <= width else REF
+        if name == "MATCH":
+            if len(arg_nodes) not in (2, 3):
+                return VALUE
+            lookup = self.eval(arg_nodes[0])
+            if isinstance(lookup, ExcelError):
+                return lookup
+            arr = self.eval(arg_nodes[1])
+            if isinstance(arr, ExcelError):
+                return arr
+            vals = arr if isinstance(arr, list) else [arr]
+            mtype = 1.0
+            if len(arg_nodes) == 3:
+                t = self.eval(arg_nodes[2])
+                if isinstance(t, ExcelError):
+                    return t
+                if not _is_num(t):
+                    return VALUE
+                mtype = float(t)  # type: ignore[arg-type]
+            if mtype == 0:
+                for i, v in enumerate(vals):
+                    if _criteria_match(v, lookup):
+                        return float(i + 1)
+                return NA
+            best: int | None = None
+            for i, v in enumerate(vals):
+                cmp = _lookup_cmp(v, lookup)
+                if cmp is None:
+                    continue
+                if mtype > 0 and cmp <= 0:
+                    best = i
+                if mtype < 0 and cmp >= 0:
+                    best = i
+            return float(best + 1) if best is not None else NA
         if name in ("SUMIF", "COUNTIF", "AVERAGEIF"):
             # Criteria functions keep their ranges separate — the generic
             # path below flattens every argument together and would lose

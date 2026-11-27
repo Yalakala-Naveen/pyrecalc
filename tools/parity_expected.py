@@ -21,6 +21,10 @@ FORMULAS = [
     "PROPER(\"hello world\")", "1/0", "IFERROR(1/0,\"caught\")", "COUNT(A1:B3)",
     "COUNTA(C1:C3)", "A1&\" items\"", "\"Apple\"=C1", "AND(A1>B1,B2>0)", "NOT(FALSE)",
     "50%", "SUM(A1:A3)/COUNT(A1:A3)", "NOSUCHFN(1)",
+    "VLOOKUP(20,A1:C3,3,FALSE)", "VLOOKUP(25,A1:C3,3)", "VLOOKUP(5,A1:C3,3)",
+    "INDEX(A1:C3,2,3)", "INDEX(C1:C3,3)", "MATCH(\"banana\",C1:C3,0)",
+    "MATCH(25,A1:A3,1)", "SUMIFS(A1:A3,C1:C3,\"apple\")",
+    "COUNTIFS(C1:C3,\"apple\",A1:A3,\">15\")", "AVERAGEIFS(A1:A3,C1:C3,\"apple\")",
 ]
 
 

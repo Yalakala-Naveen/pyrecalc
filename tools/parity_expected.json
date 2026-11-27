@@ -134,5 +134,45 @@
  {
   "formula": "NOSUCHFN(1)",
   "python": "#NAME?"
+ },
+ {
+  "formula": "VLOOKUP(20,A1:C3,3,FALSE)",
+  "python": "banana"
+ },
+ {
+  "formula": "VLOOKUP(25,A1:C3,3)",
+  "python": "banana"
+ },
+ {
+  "formula": "VLOOKUP(5,A1:C3,3)",
+  "python": "#N/A"
+ },
+ {
+  "formula": "INDEX(A1:C3,2,3)",
+  "python": "banana"
+ },
+ {
+  "formula": "INDEX(C1:C3,3)",
+  "python": "apple"
+ },
+ {
+  "formula": "MATCH(\"banana\",C1:C3,0)",
+  "python": "2"
+ },
+ {
+  "formula": "MATCH(25,A1:A3,1)",
+  "python": "2"
+ },
+ {
+  "formula": "SUMIFS(A1:A3,C1:C3,\"apple\")",
+  "python": "40"
+ },
+ {
+  "formula": "COUNTIFS(C1:C3,\"apple\",A1:A3,\">15\")",
+  "python": "1"
+ },
+ {
+  "formula": "AVERAGEIFS(A1:A3,C1:C3,\"apple\")",
+  "python": "20"
  }
 ]

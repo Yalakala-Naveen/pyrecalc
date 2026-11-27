@@ -87,6 +87,55 @@ class EvaluatorTests(unittest.TestCase):
         self.assertEqual(self.val('=SUMIF(A1:A3,"apple",B1:B3)', labels), 10.0)
         self.assertEqual(self.val('=COUNTIF(A1:A3,"<>apple")', labels), 1.0)
 
+    def test_lookup_functions(self):
+        # price table: code, name, price in A1:C3
+        cells = {"A1": "a1", "B1": "Apple", "C1": 4,
+                 "A2": "b2", "B2": "Pear", "C2": 6,
+                 "A3": "c3", "B3": "Fig", "C3": 9}
+        self.assertEqual(self.val('=VLOOKUP("b2",A1:C3,3,FALSE)', cells), 6.0)
+        self.assertEqual(self.val('=VLOOKUP("B2",A1:C3,2,FALSE)', cells), "Pear")
+        self.assertEqual(self.val('=VLOOKUP("zz",A1:C3,2,FALSE)', cells),
+                         ExcelError("#N/A"))
+        self.assertEqual(self.val('=VLOOKUP("a1",A1:C3,4,FALSE)', cells),
+                         ExcelError("#REF!"))
+        self.assertEqual(self.val('=INDEX(A1:C3,2,3)', cells), 6.0)
+        self.assertEqual(self.val('=INDEX(C1:C3,3)', cells), 9.0)
+        self.assertEqual(self.val('=INDEX(A1:C3,9,1)', cells),
+                         ExcelError("#REF!"))
+        self.assertEqual(self.val('=MATCH("c3",A1:A3,0)', cells), 3.0)
+        self.assertEqual(self.val('=MATCH("zz",A1:A3,0)', cells),
+                         ExcelError("#N/A"))
+        # lookups compose: INDEX+MATCH is the standard VLOOKUP replacement
+        self.assertEqual(self.val('=INDEX(B1:B3,MATCH("a1",A1:A3,0))', cells),
+                         "Apple")
+
+    def test_approximate_lookups(self):
+        # sorted tier table: threshold, label
+        cells = {"A1": 0, "B1": "free", "A2": 100, "B2": "pro",
+                 "A3": 500, "B3": "team"}
+        self.assertEqual(self.val('=VLOOKUP(250,A1:B3,2)', cells), "pro")
+        self.assertEqual(self.val('=VLOOKUP(500,A1:B3,2,TRUE)', cells), "team")
+        self.assertEqual(self.val('=VLOOKUP(-1,A1:B3,2)', cells),
+                         ExcelError("#N/A"))
+        self.assertEqual(self.val('=MATCH(250,A1:A3,1)', cells), 2.0)
+        self.assertEqual(self.val('=MATCH(100,A1:A3,1)', cells), 2.0)
+
+    def test_multi_criteria_functions(self):
+        cells = {"A1": "East", "B1": "Apple", "C1": 10,
+                 "A2": "East", "B2": "Pear", "C2": 20,
+                 "A3": "West", "B3": "Apple", "C3": 30}
+        self.assertEqual(
+            self.val('=SUMIFS(C1:C3,A1:A3,"East",B1:B3,"Apple")', cells), 10.0)
+        self.assertEqual(
+            self.val('=COUNTIFS(A1:A3,"East",B1:B3,"<>Fig")', cells), 2.0)
+        self.assertEqual(
+            self.val('=AVERAGEIFS(C1:C3,B1:B3,"Apple")', cells), 20.0)
+        self.assertEqual(
+            self.val('=AVERAGEIFS(C1:C3,B1:B3,"Fig")', cells),
+            ExcelError("#DIV/0!"))
+        self.assertEqual(
+            self.val('=SUMIFS(C1:C3,A1:A3,">=100")', cells), 0.0)
+
     def test_sumproduct_and_rounding_family(self):
         cells = {"A1": 2, "A2": 3, "B1": 10, "B2": 20}
         self.assertEqual(self.val("=SUMPRODUCT(A1:A2,B1:B2)", cells), 80.0)
