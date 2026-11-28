@@ -25,6 +25,9 @@ FORMULAS = [
     "INDEX(A1:C3,2,3)", "INDEX(C1:C3,3)", "MATCH(\"banana\",C1:C3,0)",
     "MATCH(25,A1:A3,1)", "SUMIFS(A1:A3,C1:C3,\"apple\")",
     "COUNTIFS(C1:C3,\"apple\",A1:A3,\">15\")", "AVERAGEIFS(A1:A3,C1:C3,\"apple\")",
+    "XLOOKUP(\"banana\",C1:C3,B1:B3)", "XLOOKUP(\"fig\",C1:C3,B1:B3,\"missing\")",
+    "XLOOKUP(25,A1:A3,B1:B3,\"\",-1)", "XLOOKUP(25,A1:A3,B1:B3,\"\",1)",
+    "XLOOKUP(\"apple\",C1:C3,A1:A3,\"\",0,-1)",
 ]
 
 

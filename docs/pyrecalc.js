@@ -234,6 +234,33 @@
       if (name === "SUMIFS") return matched.reduce((s, x) => s + x, 0);
       return matched.length ? matched.reduce((s, x) => s + x, 0) / matched.length : DIV0;
     }
+    if (name === "XLOOKUP") {
+      if (![3, 4, 5, 6].includes(argNodes.length)) return VALUE;
+      const lookup = ev(argNodes[0]); if (isErr(lookup)) return lookup;
+      const la = ev(argNodes[1]); if (isErr(la)) return la;
+      const ra = ev(argNodes[2]); if (isErr(ra)) return ra;
+      const keys = Array.isArray(la) ? la : [la];
+      const rets = Array.isArray(ra) ? ra : [ra];
+      if (!keys.length || rets.length % keys.length) return VALUE;
+      const per = rets.length / keys.length;
+      let matchMode = 0;
+      if (argNodes.length >= 5) { const mm = ev(argNodes[4]); if (isErr(mm)) return mm; if (!isNum(mm)) return VALUE; matchMode = mm; }
+      let searchMode = 1;
+      if (argNodes.length >= 6) { const sm = ev(argNodes[5]); if (isErr(sm)) return sm; if (!isNum(sm)) return VALUE; searchMode = sm; }
+      const order = keys.map((_, i) => i); if (searchMode < 0) order.reverse();
+      let found = null;
+      for (const i of order) if (criteriaMatch(keys[i], lookup)) { found = i; break; }
+      if (found === null && (matchMode === -1 || matchMode === 1)) {
+        for (const i of order) {
+          const cmp = lookupCmp(keys[i], lookup); if (cmp === null || cmp === 0) continue;
+          if (matchMode === -1 && cmp < 0 && (found === null || lookupCmp(keys[i], keys[found]) === 1)) found = i;
+          if (matchMode === 1 && cmp > 0 && (found === null || lookupCmp(keys[i], keys[found]) === -1)) found = i;
+        }
+      }
+      if (found === null) return argNodes.length >= 4 ? ev(argNodes[3]) : NA;
+      const row = rets.slice(found * per, (found + 1) * per);
+      return per === 1 ? row[0] : row;
+    }
     if (name === "VLOOKUP") {
       if (![3, 4].includes(argNodes.length)) return VALUE;
       const lookup = ev(argNodes[0]); if (isErr(lookup)) return lookup;

@@ -174,5 +174,25 @@
  {
   "formula": "AVERAGEIFS(A1:A3,C1:C3,\"apple\")",
   "python": "20"
+ },
+ {
+  "formula": "XLOOKUP(\"banana\",C1:C3,B1:B3)",
+  "python": "5"
+ },
+ {
+  "formula": "XLOOKUP(\"fig\",C1:C3,B1:B3,\"missing\")",
+  "python": "missing"
+ },
+ {
+  "formula": "XLOOKUP(25,A1:A3,B1:B3,\"\",-1)",
+  "python": "5"
+ },
+ {
+  "formula": "XLOOKUP(25,A1:A3,B1:B3,\"\",1)",
+  "python": "6"
+ },
+ {
+  "formula": "XLOOKUP(\"apple\",C1:C3,A1:A3,\"\",0,-1)",
+  "python": "30"
  }
 ]

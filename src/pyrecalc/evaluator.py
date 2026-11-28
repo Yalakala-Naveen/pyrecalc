@@ -289,6 +289,69 @@ class Evaluator:
             if name == "SUMIFS":
                 return sum(matched)
             return sum(matched) / len(matched) if matched else DIV0
+        if name == "XLOOKUP":
+            # XLOOKUP(lookup, lookup_array, return_array,
+            #          [if_not_found], [match_mode], [search_mode])
+            # match_mode: 0 exact (default), -1 exact-or-next-smaller,
+            # 1 exact-or-next-larger. search_mode: 1 first-to-last
+            # (default), -1 last-to-first; binary modes (2/-2) fall back
+            # to a linear scan, which returns the same value on the
+            # sorted arrays binary search requires.
+            if len(arg_nodes) not in (3, 4, 5, 6):
+                return VALUE
+            lookup = self.eval(arg_nodes[0])
+            if isinstance(lookup, ExcelError):
+                return lookup
+            la = self.eval(arg_nodes[1])
+            if isinstance(la, ExcelError):
+                return la
+            ra = self.eval(arg_nodes[2])
+            if isinstance(ra, ExcelError):
+                return ra
+            keys = la if isinstance(la, list) else [la]
+            rets = ra if isinstance(ra, list) else [ra]
+            if not keys or len(rets) % len(keys):
+                return VALUE
+            per = len(rets) // len(keys)  # return columns per key
+            match_mode = 0.0
+            if len(arg_nodes) >= 5:
+                mm = self.eval(arg_nodes[4])
+                if isinstance(mm, ExcelError):
+                    return mm
+                if not _is_num(mm):
+                    return VALUE
+                match_mode = float(mm)  # type: ignore[arg-type]
+            search_mode = 1.0
+            if len(arg_nodes) >= 6:
+                sm = self.eval(arg_nodes[5])
+                if isinstance(sm, ExcelError):
+                    return sm
+                if not _is_num(sm):
+                    return VALUE
+                search_mode = float(sm)  # type: ignore[arg-type]
+            order = range(len(keys) - 1, -1, -1) if search_mode < 0 else range(len(keys))
+            found: int | None = None
+            for i in order:
+                if _criteria_match(keys[i], lookup):
+                    found = i
+                    break
+            if found is None and match_mode in (-1.0, 1.0):
+                for i in order:
+                    cmp = _lookup_cmp(keys[i], lookup)
+                    if cmp is None or cmp == 0:
+                        continue
+                    if match_mode == -1.0 and cmp < 0:
+                        if found is None or _lookup_cmp(keys[i], keys[found]) == 1:  # type: ignore[arg-type]
+                            found = i
+                    if match_mode == 1.0 and cmp > 0:
+                        if found is None or _lookup_cmp(keys[i], keys[found]) == -1:  # type: ignore[arg-type]
+                            found = i
+            if found is None:
+                if len(arg_nodes) >= 4:
+                    return self.eval(arg_nodes[3])
+                return NA
+            row = rets[found * per:(found + 1) * per]
+            return row[0] if per == 1 else row
         if name == "VLOOKUP":
             if len(arg_nodes) not in (3, 4):
                 return VALUE

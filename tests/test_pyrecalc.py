@@ -109,6 +109,29 @@ class EvaluatorTests(unittest.TestCase):
         self.assertEqual(self.val('=INDEX(B1:B3,MATCH("a1",A1:A3,0))', cells),
                          "Apple")
 
+    def test_xlookup(self):
+        cells = {"A1": "a1", "B1": "Apple", "C1": 4,
+                 "A2": "b2", "B2": "Pear", "C2": 6,
+                 "A3": "c3", "B3": "Fig", "C3": 9}
+        self.assertEqual(self.val('=XLOOKUP("b2",A1:A3,C1:C3)', cells), 6.0)
+        self.assertEqual(self.val('=XLOOKUP("B2",A1:A3,B1:B3)', cells), "Pear")
+        # no match: #N/A by default, if_not_found when supplied
+        self.assertEqual(self.val('=XLOOKUP("zz",A1:A3,B1:B3)', cells),
+                         ExcelError("#N/A"))
+        self.assertEqual(self.val('=XLOOKUP("zz",A1:A3,B1:B3,"missing")', cells),
+                         "missing")
+        # search_mode -1 finds the last match
+        dup = {"A1": "x", "B1": 1, "A2": "y", "B2": 2, "A3": "x", "B3": 3}
+        self.assertEqual(self.val('=XLOOKUP("x",A1:A3,B1:B3,"",0,-1)', dup), 3.0)
+        self.assertEqual(self.val('=XLOOKUP("x",A1:A3,B1:B3)', dup), 1.0)
+        # match_mode -1 / 1: exact-or-next-smaller / larger on sorted keys
+        tiers = {"A1": 0, "B1": "free", "A2": 100, "B2": "pro",
+                 "A3": 500, "B3": "team"}
+        self.assertEqual(self.val('=XLOOKUP(250,A1:A3,B1:B3,"",-1)', tiers), "pro")
+        self.assertEqual(self.val('=XLOOKUP(250,A1:A3,B1:B3,"",1)', tiers), "team")
+        self.assertEqual(self.val('=XLOOKUP(-1,A1:A3,B1:B3,"none",-1)', tiers),
+                         "none")
+
     def test_approximate_lookups(self):
         # sorted tier table: threshold, label
         cells = {"A1": 0, "B1": "free", "A2": 100, "B2": "pro",
